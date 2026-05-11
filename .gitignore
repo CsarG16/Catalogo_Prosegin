@@ -1,0 +1,16 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temporary files
+watermark_temp_v3.png
+
+# Processed image caches
+imagenes_transparentes_cache/
+
+# Output
+output/

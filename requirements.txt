@@ -1,0 +1,6 @@
+pandas
+openpyxl
+reportlab
+Pillow
+pymupdf
+rembg[cpu]
