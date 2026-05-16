@@ -13,6 +13,50 @@ from reportlab.lib.units import cm
 from reportlab.lib.enums import TA_RIGHT, TA_LEFT, TA_CENTER
 import pathlib
 import fitz  # Para unir la portada PDF al catálogo final
+from reportlab.platypus import Flowable
+import procesar_imagenes
+
+# ==========================================
+# PALETA DE COLORES PARA PRODUCTOS (Swatches)
+# ==========================================
+PRODUCT_COLORS = {
+    'plomo': '#9CA3AF',
+    'azul marino': '#1E3A8A',
+    'blanco': '#FFFFFF',
+    'negro': '#000000',
+    'beige': '#D1BFA7',
+    'azul electrico': '#2563EB',
+    'amarillo': '#FDE047',
+    'rojo': '#EF4444',
+    'naranja': '#F97316',
+    'verde': '#22C55E'
+}
+
+class ColorCircles(Flowable):
+    def __init__(self, color_names):
+        Flowable.__init__(self)
+        self.colors_to_draw = []
+        for c in color_names:
+            c_clean = c.strip().lower()
+            if c_clean in PRODUCT_COLORS:
+                self.colors_to_draw.append(PRODUCT_COLORS[c_clean])
+        
+        self.size = 0.35 * cm
+        self.padding = 0.15 * cm
+        self.width = len(self.colors_to_draw) * (self.size + self.padding)
+        self.height = self.size
+
+    def draw(self):
+        for i, color_hex in enumerate(self.colors_to_draw):
+            self.canv.saveState()
+            self.canv.setFillColor(colors.HexColor(color_hex))
+            x = i * (self.size + self.padding)
+            # Borde sutil para todos los círculos (da un aspecto más premium)
+            self.canv.setStrokeColor(colors.HexColor("#E5E7EB"))
+            self.canv.setLineWidth(0.5)
+            self.canv.circle(x + self.size/2, self.size/2, self.size/2, fill=1, stroke=1)
+            self.canv.restoreState()
+
 
 # ==========================================
 # REGISTRO DE FUENTES PREMIUM
@@ -115,120 +159,120 @@ def get_cached_image(path):
         _IMAGE_CACHE[path] = ImageReader(path)
     return _IMAGE_CACHE.get(path)
 
-def draw_header_footer(canvas, doc):
-    """Dibuja el encabezado, pie de página corporativo y marca de agua en cada hoja."""
-    canvas.saveState()
-    
-    # --- WATERMARK ---
+def draw_corporate_header(canvas, category, width, height):
+    """Dibuja el encabezado corporativo con logo y categoría."""
     logo_path = "logo_horizontal.png"
-    watermark_path = "watermark_temp_v3.png"
-    
-    if crear_marca_de_agua(logo_path, watermark_path):
-        logo_wm = get_cached_image(watermark_path)
-        if logo_wm:
-            w, h = logo_wm.getSize()
-            # Tamaño de la marca de agua (más grande)
-            wm_width = 16 * cm
-            wm_height = wm_width * (h / float(w))
-            # Centrar en la página A4
-            x = (A4[0] - wm_width) / 2
-            y = (A4[1] - wm_height) / 2
-            canvas.drawImage(logo_wm, x, y, width=wm_width, height=wm_height, mask='auto')
-
-    # --- HEADER ---
     logo = get_cached_image(logo_path)
     if logo:
         w, h = logo.getSize()
         aspect = w / float(h)
         target_h = 1.3 * cm
         target_w = target_h * aspect
-        canvas.drawImage(logo, 1.5*cm, A4[1] - 1.8*cm, width=target_w, height=target_h, mask='auto')
+        canvas.drawImage(logo, 1.5*cm, height - 1.8*cm, width=target_w, height=target_h, mask='auto')
     else:
         canvas.setFont('Helvetica-Bold', 9)
         canvas.setFillColor(COLOR_TEXT_MUTED)
-        canvas.drawString(1.5*cm, A4[1] - 1.2*cm, "CATÁLOGO DE PRODUCTOS EPP")
+        canvas.drawString(1.5*cm, height - 1.2*cm, "CATÁLOGO DE PRODUCTOS EPP")
         
-    # Texto de la categoría a la derecha (reemplaza a PROSEGIN PREVENCIÓN INTEGRAL)
+    # Texto de la categoría a la derecha
     canvas.setFont('Helvetica-Bold', 12)
     canvas.setFillColor(COLOR_TEXT_MAIN)
-    cat_actual = _PAGE_CATEGORIES.get(doc.page, "")
-    canvas.drawRightString(A4[0] - 1.5*cm, A4[1] - 1.4*cm, cat_actual)
+    canvas.drawRightString(width - 1.5*cm, height - 1.4*cm, str(category).upper())
     
     # Línea divisoria del header (Dorada)
     canvas.setStrokeColor(COLOR_ACCENT)
     canvas.setLineWidth(1)
-    canvas.line(1.5*cm, A4[1] - 2.0*cm, A4[0] - 1.5*cm, A4[1] - 2.0*cm)
-    
-    # --- FOOTER CORPORATIVO ---
+    canvas.line(1.5*cm, height - 2.0*cm, width - 1.5*cm, height - 2.0*cm)
+
+def draw_corporate_footer(canvas, page_num, width, height):
+    """Dibuja el pie de página corporativo con información de contacto y paginación."""
     footer_h = 1.4 * cm  # Altura de la barra del footer
     footer_y = 0          # Pegado al borde inferior
     
     # Fondo Azul Marino Corporativo
     canvas.setFillColor(COLOR_TEXT_MAIN)
-    canvas.rect(0, footer_y, A4[0], footer_h, fill=1, stroke=0)
+    canvas.rect(0, footer_y, width, footer_h, fill=1, stroke=0)
     
     # Línea dorada superior decorativa
     canvas.setStrokeColor(COLOR_ACCENT)
     canvas.setLineWidth(2)
-    canvas.line(0, footer_h, A4[0], footer_h)
+    canvas.line(0, footer_h, width, footer_h)
     
     # --- Sección Izquierda: Contacto ---
     canvas.setFillColor(colors.white)
-    canvas.setFont('Helvetica-Bold', 7)
-    canvas.drawString(1.5*cm, footer_h - 0.45*cm, "Más información en:")
+    canvas.setFont('Helvetica-Bold', 9)
+    canvas.drawString(1.5*cm, footer_h - 0.60*cm, "Más información en:")
     
-    canvas.setFont('Helvetica', 7)
-    contact_y = footer_h - 0.95*cm
+    canvas.setFont('Helvetica', 9)
+    contact_y = footer_h - 1.05*cm
     # Correo
-    canvas.drawString(1.5*cm, contact_y, "ventas@prosegin.com")
+    email_text = "ventas@prosegin.com"
+    canvas.drawString(1.5*cm, contact_y, email_text)
+    email_w = canvas.stringWidth(email_text, 'Helvetica', 9)
+    # Área clicable extendida para facilitar el toque
+    canvas.linkURL(f"mailto:{email_text}", (1.5*cm, 0, 1.5*cm + email_w, footer_h), relative=0)
+    
     # Separador
-    email_w = canvas.stringWidth("ventas@prosegin.com", 'Helvetica', 7)
     canvas.setFillColor(COLOR_ACCENT)
     canvas.drawString(1.5*cm + email_w + 0.2*cm, contact_y, "|")
     # Teléfono
     canvas.setFillColor(colors.white)
     canvas.drawString(1.5*cm + email_w + 0.5*cm, contact_y, "989 983 227")
     
-    # Link clickable para WhatsApp en el número
+    # Link clickable para WhatsApp en el número (Área extendida)
     phone_x = 1.5*cm + email_w + 0.5*cm
-    phone_w = canvas.stringWidth("989 983 227", 'Helvetica', 7)
+    phone_w = canvas.stringWidth("989 983 227", 'Helvetica', 9)
     whatsapp_url = "https://wa.me/51989983227?text=Hola%2C%20quiero%20cotizar%21"
-    canvas.linkURL(whatsapp_url, (phone_x, contact_y - 2, phone_x + phone_w, contact_y + 8), relative=0)
+    canvas.linkURL(whatsapp_url, (phone_x, 0, phone_x + phone_w, footer_h), relative=0)
     
-    # --- Sección Derecha: Redes Sociales ---
+    # Espacio extra entre el número y la nueva sección (1.5 cm)
+    address_x = phone_x + phone_w + 1.5*cm
+    
+    # Título "Encuéntranos aquí:"
     canvas.setFillColor(colors.white)
-    canvas.setFont('Helvetica-Bold', 7)
-    canvas.drawRightString(A4[0] - 1.5*cm, footer_h - 0.45*cm, "Síguenos en:")
+    canvas.setFont('Helvetica-Bold', 9)
+    canvas.drawString(address_x, footer_h - 0.60*cm, "Encuéntranos aquí:")
     
-    # Iconos de redes sociales
-    icon_size = 0.55 * cm
-    icon_y = footer_h - 1.05*cm
+    # Dirección
+    canvas.setFont('Helvetica', 9)
+    address_text = "Av. Guillermo Dansey Nro. 354"
+    canvas.drawString(address_x, contact_y, address_text)
     
-    fb_icon_path = "assets/facebook_icon.png"
-    li_icon_path = "assets/linkedin_icon.png"
+    # Link clickable para Google Maps en la dirección (Área extendida)
+    address_w = canvas.stringWidth(address_text, 'Helvetica', 9)
+    gmaps_url = "https://maps.app.goo.gl/KQthqjJ5AKSJXRWWA"
+    canvas.linkURL(gmaps_url, (address_x, 0, address_x + address_w, footer_h), relative=0)
     
-    # LinkedIn (más a la derecha)
-    li_x = A4[0] - 1.5*cm - icon_size
-    if os.path.exists(li_icon_path):
-        li_img = get_cached_image(li_icon_path)
-        if li_img:
-            canvas.drawImage(li_img, li_x, icon_y, width=icon_size, height=icon_size, mask='auto')
-    linkedin_url = "https://www.linkedin.com/company/prosegin/posts"
-    canvas.linkURL(linkedin_url, (li_x, icon_y, li_x + icon_size, icon_y + icon_size), relative=0)
+    # --- Paginación ---
+    if page_num:
+        canvas.setFillColor(COLOR_ACCENT)
+        canvas.setFont('Helvetica-Bold', 10)
+        canvas.drawRightString(width - 1.5*cm, footer_h - 0.85*cm, f"Pág. {page_num}")
+
+def draw_header_footer(canvas, doc):
+    """Callback para ReportLab que dibuja header, footer y marca de agua."""
+    canvas.saveState()
+    width, height = A4
     
-    # Facebook (a la izquierda del LinkedIn)
-    fb_x = li_x - icon_size - 0.3*cm
-    if os.path.exists(fb_icon_path):
-        fb_img = get_cached_image(fb_icon_path)
-        if fb_img:
-            canvas.drawImage(fb_img, fb_x, icon_y, width=icon_size, height=icon_size, mask='auto')
-    facebook_url = "https://www.facebook.com/p/Prosegin-61561260659643/"
-    canvas.linkURL(facebook_url, (fb_x, icon_y, fb_x + icon_size, icon_y + icon_size), relative=0)
+    # --- WATERMARK ---
+    logo_path = "logo_horizontal.png"
+    watermark_path = "watermark_temp_v3.png"
+    if crear_marca_de_agua(logo_path, watermark_path):
+        logo_wm = get_cached_image(watermark_path)
+        if logo_wm:
+            w, h = logo_wm.getSize()
+            wm_width = 16 * cm
+            wm_height = wm_width * (h / float(w))
+            x = (width - wm_width) / 2
+            y = (height - wm_height) / 2
+            canvas.drawImage(logo_wm, x, y, width=wm_width, height=wm_height, mask='auto')
+
+    # --- HEADER ---
+    cat_actual = _PAGE_CATEGORIES.get(doc.page, "")
+    draw_corporate_header(canvas, cat_actual, width, height)
     
-    # --- Paginación (centrada en el footer) ---
-    canvas.setFillColor(COLOR_ACCENT)
-    canvas.setFont('Helvetica-Bold', 8)
-    canvas.drawCentredString(A4[0] / 2, footer_h - 0.75*cm, f"Pág. {doc.page}")
+    # --- FOOTER ---
+    draw_corporate_footer(canvas, doc.page, width, height)
     
     canvas.restoreState()
 
@@ -236,14 +280,25 @@ def generar_indice_dinamico(cat_start_pages, output_path):
     c = canvas.Canvas(output_path, pagesize=A4)
     width, height = A4
     
-    COLOR_TEXT_MAIN = colors.HexColor("#081233")
-    COLOR_ACCENT = colors.HexColor("#F5AD14")
-    COLOR_BLACK = colors.black
+    # 1. WATERMARK
+    logo_path = "logo_horizontal.png"
+    watermark_path = "watermark_temp_v3.png"
+    if crear_marca_de_agua(logo_path, watermark_path):
+        logo_wm = get_cached_image(watermark_path)
+        if logo_wm:
+            w, h = logo_wm.getSize()
+            wm_width = 16 * cm
+            wm_height = wm_width * (h / float(w))
+            x = (width - wm_width) / 2
+            y = (height - wm_height) / 2
+            c.drawImage(logo_wm, x, y, width=wm_width, height=wm_height, mask='auto')
+
+    # 2. HEADER CORPORATIVO
+    # El índice suele ser la página 2 del documento final (Portada + Índice)
+    # Sin embargo, aquí lo generamos como un PDF independiente que luego se une.
+    draw_corporate_header(c, "ÍNDICE", width, height)
     
-    c.setFont("Helvetica-Bold", 30)
-    c.setFillColor(COLOR_TEXT_MAIN)
-    c.drawCentredString(width / 2.0, height - 70, "ÍNDICE")
-    
+    # 3. LISTA DE CATEGORÍAS
     orden_categorias = [
         ("CALZADO DE SEGURIDAD", 1),
         ("PROTECCIÓN CORPORAL", 2),
@@ -277,28 +332,17 @@ def generar_indice_dinamico(cat_start_pages, output_path):
         c.setLineWidth(0.5)
         c.line(50, y_pos - 15, width - 50, y_pos - 15)
 
-    footer_y = 150
-    c.setStrokeColor(COLOR_ACCENT)
-    c.setLineWidth(2)
-    c.line(50, footer_y + 25, width - 50, footer_y + 25)
-    
-    c.setFont("Helvetica-Bold", 14)
-    c.setFillColor(COLOR_ACCENT)
-    c.drawString(50, footer_y, "CORREO ELECTRÓNICO")
-    c.setFont("Helvetica-Bold", 12)
-    c.setFillColor(COLOR_BLACK)
-    c.drawString(50, footer_y - 20, "VENTAS@PROSEGIN.COM")
-    
-    c.setFont("Helvetica-Bold", 14)
-    c.setFillColor(COLOR_ACCENT)
-    c.drawRightString(width - 50, footer_y, "NÚMERO")
-    c.setFont("Helvetica-Bold", 12)
-    c.setFillColor(COLOR_BLACK)
-    c.drawRightString(width - 50, footer_y - 20, "989 983 227")
+    # 4. FOOTER CORPORATIVO (Reemplaza al footer anterior)
+    # Para el índice no mostramos número de página por ahora o pasamos None
+    draw_corporate_footer(c, None, width, height)
 
     c.save()
 
 def generar_pdf():
+    # Sincronizar imágenes automáticamente antes de empezar
+    print("🔄 Sincronizando imágenes...")
+    procesar_imagenes.procesar_imagenes()
+    
     pathlib.Path("output").mkdir(parents=True, exist_ok=True)
 
     if not os.path.exists(DATA_PATH):
@@ -320,6 +364,8 @@ def generar_pdf():
             elif normalized == 'imagen': mapping[col] = 'Imagen'
             elif normalized == 'sku': mapping[col] = 'SKU'
             elif normalized == 'precios_especiales': mapping[col] = 'Precios_Especiales'
+            elif normalized == 'colores': mapping[col] = 'Colores'
+
         
         df = df.rename(columns=mapping)
         
@@ -569,6 +615,20 @@ def generar_pdf():
                     
                 detalles.append(Paragraph(texto_final, style_precios_esp))
 
+        # --- 2.3 AGREGAR CÍRCULOS DE COLORES SI EXISTEN ---
+        colores_raw = str(row.get('Colores', '')).strip()
+        if colores_raw and colores_raw.lower() != 'nan' and colores_raw != "":
+            # Si el valor es 'xxx', usamos la lista completa de colores solicitada
+            if colores_raw.lower() == 'xxx':
+                lista_colores = list(PRODUCT_COLORS.keys())
+            else:
+                # Si no, asumimos que es una lista separada por comas
+                lista_colores = [c.strip() for c in colores_raw.split(',')]
+            
+            detalles.append(Spacer(1, 8))
+            detalles.append(ColorCircles(lista_colores))
+
+
         # --- 3. MAQUETACIÓN DE LA TARJETA ---
         tarjeta_interna = Table([
             [img_render, detalles]
@@ -737,12 +797,71 @@ def generar_pdf():
             # Guardar el resultado final sobreescribiendo el temporal
             doc_final.save(OUTPUT_PATH, garbage=4, deflate=True)
             doc_final.close()
+
+            # ==========================================
+            # ENRIQUECER EL PDF FINAL (ENLACES GLOBALES)
+            # ==========================================
+            enriquecer_pdf_final(OUTPUT_PATH)
+
             print(f"✨ ¡Catálogo completo con Portada y Contraportada en: {OUTPUT_PATH}!")
         except Exception as e:
             print(f"⚠️ Error al unir PDFs: {e}")
             print(f"✨ El catálogo se guardó sin uniones en: {OUTPUT_PATH}")
     else:
+        # También enriquecer si no hubo uniones (por si acaso)
+        enriquecer_pdf_final(OUTPUT_PATH)
         print(f"✨ ¡Catálogo Premium creado con éxito en: {OUTPUT_PATH}!")
+
+def enriquecer_pdf_final(pdf_path):
+    """
+    Escanea todo el PDF en busca de textos de contacto y añade enlaces si faltan.
+    Esto es útil para la Portada y Contraportada que son PDFs estáticos.
+    """
+    if not os.path.exists(pdf_path):
+        return
+        
+    print(f"🔎 Escaneando PDF para activar enlaces globales...")
+    try:
+        doc = fitz.open(pdf_path)
+        enlaces_añadidos = 0
+        
+        email_text = "ventas@prosegin.com"
+        phone_text = "989 983 227"
+        address_text = "AV. GUILLERMO DANSEY NRO. 354"
+        
+        whatsapp_url = "https://wa.me/51989983227?text=Hola%2C%20quiero%20cotizar%21"
+        gmaps_url = "https://maps.app.goo.gl/KQthqjJ5AKSJXRWWA"
+        
+        for page in doc:
+            # Solo añadir si no hay muchos links ya (evita duplicar en páginas del catálogo)
+            # Pero para ser más seguros, buscamos instancias y verificamos colisión.
+            
+            # Buscar Correo
+            for inst in page.search_for(email_text):
+                # Si no hay un link en esta posición, lo añadimos
+                if not any(inst.intersects(l['from']) for l in page.get_links()):
+                    page.insert_link({'kind': fitz.LINK_GOTO, 'uri': f"mailto:{email_text}", 'from': inst, 'kind': fitz.LINK_URI})
+                    enlaces_añadidos += 1
+            
+            # Buscar Teléfono
+            for inst in page.search_for(phone_text):
+                if not any(inst.intersects(l['from']) for l in page.get_links()):
+                    page.insert_link({'kind': fitz.LINK_GOTO, 'uri': whatsapp_url, 'from': inst, 'kind': fitz.LINK_URI})
+                    enlaces_añadidos += 1
+                    
+            # Buscar Dirección (parcial para ser más flexible)
+            for inst in page.search_for(address_text):
+                if not any(inst.intersects(l['from']) for l in page.get_links()):
+                    # Expandir un poco el área de la dirección
+                    page.insert_link({'kind': fitz.LINK_GOTO, 'uri': gmaps_url, 'from': inst, 'kind': fitz.LINK_URI})
+                    enlaces_añadidos += 1
+        
+        if enlaces_añadidos > 0:
+            doc.saveIncr() # Guardar cambios de forma incremental
+            print(f"  ✅ Se activaron {enlaces_añadidos} enlaces adicionales en páginas estáticas.")
+        doc.close()
+    except Exception as e:
+        print(f"  ⚠️ No se pudo enriquecer el PDF: {e}")
 
 if __name__ == "__main__":
     generar_pdf()

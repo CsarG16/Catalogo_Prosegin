@@ -35,6 +35,11 @@ def procesar_imagenes():
         nombre_salida = os.path.splitext(nombre_archivo)[0] + ".webp"
         ruta_output = os.path.join(FOLDER_PROCESADA, nombre_salida)
 
+        # OPTIMIZACIÓN: Solo procesar si la original es más nueva que la procesada
+        if os.path.exists(ruta_output):
+            if os.path.getmtime(ruta_input) <= os.path.getmtime(ruta_output):
+                continue
+
         try:
             with Image.open(ruta_input) as img:
                 # Arreglo para el fondo negro: Si la imagen tiene transparencia,
